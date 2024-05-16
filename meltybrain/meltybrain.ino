@@ -1,20 +1,21 @@
 #include <SparkFun_LIS331.h>
-#include <Watchdog.h>
+// #include <Watchdog.h>
 #include <Wire.h>
-#include <SoftwareSerial.h>
+#include "BluetoothSerial.h"
+#include "DShotRMT.h"
 
 //hardware
 LIS331 accel1;
 LIS331 accel2;
-SoftwareSerial hc06(2, 3);  //tx rx
+BluetoothSerial bt;  //tx rx
 
-Watchdog watchdog;
+// Watchdog watchdog;
 
 //Drive pins
-int pinLF = 6;
-int pinLR = 5;
-int pinRF = 10;
-int pinRR = 9;
+// int pinLF = 6;
+// int pinLR = 5;
+// int pinRF = 10;
+// int pinRR = 9;
 
 //LED pins
 int pinLED = 8;
@@ -35,7 +36,7 @@ int forceAccelReadTime = 500000;  //roughly the time it takes to read from the a
 //VARIABLES
 float rpm;
 float meltyTick;     //number of microseconds per revolution
-long time = 0;       //direction that the bot is pointing in melty mode, degrees * 10
+long direction = 0;       //direction that the bot is pointing in melty mode, degrees * 10
 long lastTick = 0;   //last time time was calculated
 long ticks = 0;      //loop counter
 bool melting = 0;    //if in spinny mode
@@ -52,6 +53,11 @@ int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
 long leftMotor = 0;
 long rightMotor = 0;
+void btwrite();
+
+const auto DSHOT_MODE = DSHOT300;
+const auto MOTOR01_PIN = GPIO_NUM_4;
+DShotRMT motor01(MOTOR01_PIN, RMT_CHANNEL_0);
 
 //accel outputs
 int16_t a1x;
@@ -74,7 +80,7 @@ long lastAccelRead = 0;
 
 void setup() {
   Serial.begin(115200);
-  hc06.begin(115200);
+  bt.begin();
   Wire.begin();
   Serial.println(F("Hello!"));
 
@@ -89,10 +95,11 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  pinMode(pinLF, OUTPUT);
-  pinMode(pinLR, OUTPUT);
-  pinMode(pinRF, OUTPUT);
-  pinMode(pinRR, OUTPUT);
+  // pinMode(pinLF, OUTPUT);
+  // pinMode(pinLR, OUTPUT);
+  // pinMode(pinRF, OUTPUT);
+  // pinMode(pinRR, OUTPUT);
+  motor01.begin(DSHOT_MODE);
 
   // LED initialize
   pinMode(pinLED, OUTPUT);
@@ -112,20 +119,20 @@ void setup() {
     a1zTotal += accel1.convertToG(400, a1z);
     a2zTotal += accel1.convertToG(400, a2z);
     if (i % 100 == 0) {
-      hc06.write("*Z0*");     //RPM
-      hc06.write("*Xdist:");  //Accel dist
+      btwrite("*Z0*");     //RPM
+      btwrite("*Xdist:");  //Accel dist
       dtostrf(accelDist, 1, 2, str);
-      hc06.write(str);
-      hc06.write("*");
-      hc06.write("*V-69*");  //TPS
+      btwrite(str);
+      btwrite("*");
+      btwrite("*V-69*");  //TPS
 
       dtostrf(a2zRunning, 1, 2, str);  //gforce of a1z
-      hc06.write("*BGs a1z:");
-      hc06.write(str);
+      btwrite("*BGs a1z:");
+      btwrite(str);
       dtostrf(a2zRunning, 1, 2, str);
-      hc06.write(", a2z:");
-      hc06.write(str);
-      hc06.write("*");
+      btwrite(", a2z:");
+      btwrite(str);
+      btwrite("*");
 
       Serial.print("a1zAVG: ");
       Serial.print(a1zRunning);
@@ -156,21 +163,21 @@ void setup() {
       a1zRunning = a1zRunning - (a1zTotal / i);
       a2zRunning = a2zRunning - (a2zTotal / i);
     } else if (i > 1000) {
-      if ((char)hc06.read() == '?') { break; }
+      if ((char)bt.read() == '?') { break; }
     }
   }
   // accel1.setPowerMode(LIS331::POWER_DOWN);
   // accel2.setPowerMode(LIS331::POWER_DOWN);
-  watchdog.enable(Watchdog::TIMEOUT_2S);
+  // watchdog.enable(Watchdog::TIMEOUT_2S);
 }
 
 void loop() {
-  watchdog.reset();
+  // watchdog.reset();
   if (heartbeat + timeout < millis()) {
-    digitalWrite(pinRF, LOW);
-    digitalWrite(pinRR, LOW);
-    digitalWrite(pinLF, LOW);
-    digitalWrite(pinLR, LOW);
+    // digitalWrite(pinRF, LOW);
+    // digitalWrite(pinRR, LOW);
+    // digitalWrite(pinLF, LOW);
+    // digitalWrite(pinLR, LOW);
 
     digitalWrite(pinLED, HIGH);
     driveSpeed = 0;
@@ -192,7 +199,7 @@ void loop() {
       melty();
       ticks++;
       // if (ticks % ticksPerAccelCalc == 0) {
-      if (((time - (driveWidth / 2)+(driveAngle * 10 * driveSpeed)) % 1800 < accelReadZone) or micros()>lastAccelRead+forceAccelReadTime) {
+      if (((direction - (driveWidth / 2)+(driveAngle * 10 * driveSpeed)) % 1800 < accelReadZone) or micros()>lastAccelRead+forceAccelReadTime) {
         readAccel();
         lastAccelRead=micros();
       }
@@ -231,16 +238,16 @@ void readAccel() {
 //calculates direction pointing (degrees*10)
 void calc() {
   long newTime = micros();
-  time = long(time + 3600 * ((newTime - lastTick) / meltyTick)) % 3600;
+  direction = long(direction + 3600 * ((newTime - lastTick) / meltyTick)) % 3600;
   lastTick = newTime;
 }
 
 void meltyLED() {
   //Guide LED
-  if ((time + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
-    PORTB |= 0b00000001;
+  if ((direction + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
+    // PORTB |= 0b00000001;
   } else {
-    PORTB &= 0b11111110;
+    // PORTB &= 0b11111110;
   }
 }
 
@@ -253,30 +260,30 @@ void melty() {
   // pinRR = 9
   if (driveSpeed > 0) {
     //LeftDrive
-    if ((time + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
-      PORTD |= 0b01000000;
-      PORTD &= 0b11011111;
+    if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
+      // PORTD |= 0b01000000;
+      // PORTD &= 0b11011111;
       // PORTD |= 0b00000000;
       // PORTD &= 0b11011111;
     } else {
-      PORTD |= 0b00100000;
-      PORTD &= 0b10111111;
+      // PORTD |= 0b00100000;
+      // PORTD &= 0b10111111;
     }
     //RightDrive
-    if ((time + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
-      PORTB |= 0b00000010;
-      PORTB &= 0b11111011;
+    if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+      // PORTB |= 0b00000010;
+      // PORTB &= 0b11111011;
       // PORTB |= 0b00000000;
       // PORTB &= 0b11111011;
     } else {
-      PORTB |= 0b00000100;
-      PORTB &= 0b11111101;
+      // PORTB |= 0b00000100;
+      // PORTB &= 0b11111101;
     }
   } else {
-    PORTB |= 0b00000100;
-    PORTB &= 0b11111101;
-    PORTD |= 0b00100000;
-    PORTD &= 0b10111111;
+    // PORTB |= 0b00000100;
+    // PORTB &= 0b11111101;
+    // PORTD |= 0b00100000;
+    // PORTD &= 0b10111111;
   }
 }
 void melt() {
@@ -287,16 +294,16 @@ void melt() {
 }
 void freeze() {
   melting = 0;
-  digitalWrite(pinRF, LOW);
-  digitalWrite(pinRR, LOW);
-  digitalWrite(pinLF, LOW);
-  digitalWrite(pinLR, LOW);
+  // digitalWrite(pinRF, LOW);
+  // digitalWrite(pinRR, LOW);
+  // digitalWrite(pinLF, LOW);
+  // digitalWrite(pinLR, LOW);
   digitalWrite(pinLED, HIGH);
 }
 
 void checkCommands() {
-  while (hc06.available() > 0) {
-    char nextChar = (char)hc06.read();
+  while (bt.available() > 0) {
+    char nextChar = (char)bt.read();
     Serial.print(nextChar);
     if (nextChar == '?') {
       heartbeat = millis();
@@ -400,56 +407,61 @@ void set() {
     leftMotor = leftMotor * driveSpeed;
     rightMotor = rightMotor * driveSpeed;
 
-    if (leftMotor > 0) {  //BACKWARDS
-      digitalWrite(pinLF, LOW);
-      digitalWrite(pinLR, HIGH);
-    } else if (leftMotor < 0) {  //FORWARDS
-      digitalWrite(pinLR, LOW);
-      digitalWrite(pinLF, HIGH);
-    } else {
-      digitalWrite(pinLF, LOW);
-      digitalWrite(pinLR, LOW);
-    }
-    if (rightMotor > 0) {  //BACKWARDS
-      digitalWrite(pinRF, LOW);
-      digitalWrite(pinRR, HIGH);
-    } else if (rightMotor < 0) {  //FORWARDS
-      digitalWrite(pinRR, LOW);
-      digitalWrite(pinRF, HIGH);
-    } else {
-      digitalWrite(pinRF, LOW);
-      digitalWrite(pinRR, LOW);
-    }
+    // if (leftMotor > 0) {  //BACKWARDS
+    //   digitalWrite(pinLF, LOW);
+    //   digitalWrite(pinLR, HIGH);
+    // } else if (leftMotor < 0) {  //FORWARDS
+    //   digitalWrite(pinLR, LOW);
+    //   digitalWrite(pinLF, HIGH);
+    // } else {
+    //   digitalWrite(pinLF, LOW);
+    //   digitalWrite(pinLR, LOW);
+    // }
+    // if (rightMotor > 0) {  //BACKWARDS
+    //   digitalWrite(pinRF, LOW);
+    //   digitalWrite(pinRR, HIGH);
+    // } else if (rightMotor < 0) {  //FORWARDS
+    //   digitalWrite(pinRR, LOW);
+    //   digitalWrite(pinRF, HIGH);
+    // } else {
+    //   digitalWrite(pinRF, LOW);
+    //   digitalWrite(pinRR, LOW);
+    // }
   }
 }
 void send() {
   char str[20];
 
-  // hc06.write("*VGyro:");
+  // btwrite("*VGyro:");
   // dtostrf(g1Xrunning, 1, 0, str);
-  // hc06.write(str);
-  // hc06.write("*");
+  // btwrite(str);
+  // btwrite("*");
 
-  // hc06.write("*XCalc1:");
+  // btwrite("*XCalc1:");
   // dtostrf(rpmBig, 1, 0, str);
-  // hc06.write(str);
-  // hc06.write("*");
+  // btwrite(str);
+  // btwrite("*");
   if (melting == 1) {
-    hc06.write("*VTPS:");
+    btwrite("*VTPS:");
     dtostrf((ticks * 1000 / (millis() - meltyStart)), 1, 0, str);
-    hc06.write(str);
-    hc06.write("*");
+    btwrite(str);
+    btwrite("*");
     // delay(2);
   }
 
 
-  hc06.write("*ZRPM");
+  btwrite("*ZRPM");
   dtostrf(60000000 / meltyTick, 1, 0, str);
-  hc06.write(str);
-  hc06.write("*");
+  btwrite(str);
+  btwrite("*");
   // delay(2);
-  // hc06.write("*Brpm accel:");
+  // btwrite("*Brpm accel:");
   // dtostrf(rpmBig, 1, 0, str);
-  // hc06.write(str);
-  // hc06.write("*");
+  // btwrite(str);
+  // btwrite("*");
+}
+void btwrite(String str){
+  uint8_t buf[str.length()];
+  memcpy(buf,str.c_str(),str.length());
+  bt.write(buf,str.length());
 }
