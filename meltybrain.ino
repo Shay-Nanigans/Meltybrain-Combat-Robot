@@ -17,6 +17,9 @@ int pinLED = 5;
 
 // Misc
 float accelDist = 10.0;
+int accel1Orientation = 1; //orientation of accelerometer1: x=0 y=1 z=2
+int accel2Orientation = 1; //orientation of accelerometer2: x=0 y=1 z=2
+bool accelSame = true;     //whether one accel is flipped
 long guideLEDwidth = 300;  //width of the guide
 long LEDoffset = -900;     //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 450;     //valid times to go in direction
@@ -29,6 +32,7 @@ int driveTimeout = 1000;          //how long it drives in a direction with timed
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
 int driveControlFreq = 8000;      //Oneshot125 is 8000hz
+    
 
 //VARIABLES
 float rpm;
@@ -59,15 +63,17 @@ int16_t a1y;
 int16_t a2y;
 int16_t a1z;
 int16_t a2z;
+int16_t a1val;
+int16_t a2val;
 
 //accel running avg
-float a1zRunning = 0;
-float a2zRunning = 0;
-int a1zArrPos = 0;
-int a2zArrPos = 0;
+float a1Running = 0;
+float a2Running = 0;
+int a1ArrPos = 0;
+int a2ArrPos = 0;
 int avgArrPos = 0;
-float a1zArr[runningAvgLen];
-float a2zArr[runningAvgLen];
+float a1Arr[runningAvgLen];
+float a2Arr[runningAvgLen];
 float avgArr[runningAvgLen];
 long lastAccelRead = 0;
 
@@ -103,12 +109,12 @@ void setup() {
   digitalWrite(pinLED, LOW);
   char str[20];
   int i = 0;
-  float a1zTotal = 0;
-  float a2zTotal = 0;
+  float a1Total = 0;
+  float a2Total = 0;
   while (true) {
     readAccel();
-    a1zTotal += accel1.convertToG(400, a1z);
-    a2zTotal += accel1.convertToG(400, a2z);
+    a1Total += accel1.convertToG(400, a1val);
+    a2Total += accel1.convertToG(400, a2val);
     if (i % 100 == 0) {
       btwrite("*Z0*");     //RPM
       btwrite("*Xdist:");  //Accel dist
@@ -117,18 +123,18 @@ void setup() {
       btwrite("*");
       btwrite("*V-69*");  //TPS
 
-      dtostrf(a2zRunning, 1, 2, str);  //gforce of a1z
-      btwrite("*BGs a1z:");
+      dtostrf(a1Running, 1, 2, str);  //gforce of a1
+      btwrite("*BGs a1:");
       btwrite(str);
-      dtostrf(a2zRunning, 1, 2, str);
-      btwrite(", a2z:");
+      dtostrf(a2Running, 1, 2, str);
+      btwrite(", a2:");
       btwrite(str);
       btwrite("*");
 
-      Serial.print("a1zAVG: ");
-      Serial.print(a1zRunning);
-      Serial.print(" a2zAVG: ");
-      Serial.println(a2zRunning);
+      Serial.print("a1AVG: ");
+      Serial.print(a1Running);
+      Serial.print(" a2AVG: ");
+      Serial.println(a2Running);
 
       Serial.print("X1:");
       Serial.print(accel1.convertToG(400, a1x));
@@ -151,8 +157,8 @@ void setup() {
     delay(1);
     if (i == 1000) {
       digitalWrite(pinLED, HIGH);
-      a1zRunning = a1zRunning - (a1zTotal / i);
-      a2zRunning = a2zRunning - (a2zTotal / i);
+      a1Running = a1Running - (a1Total / i);
+      a2Running = a2Running - (a2Total / i);
     } else if (i > 1000) {
       if ((char)bt.read() == '?') { break; }
     }
@@ -205,18 +211,44 @@ void loop() {
   }
   }
 }
-
+void accelOrientation(){
+  if (accel1Orientation = 0){
+    a1val = a1x;
+  }else if (accel1Orientation = 1){
+    a1val = a1y;
+  }else{ //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
+    a1val = a1z;
+  }
+  if (accel2Orientation = 0){
+    a2val = a2x;
+  }else if (accel2Orientation = 1){
+    a2val = a2y;
+  }else{ //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
+    a2val = a2z;
+  }
+}
 //Reads accelerometers and calculates RPM and ticktime
 void readAccel() {
   accel1.readAxes(a1x, a1y, a1z);
   accel2.readAxes(a2x, a2y, a2z);
-  a1zRunning = a1zRunning + (accel1.convertToG(400, a1z) / runningAvgLen) - a1zArr[a1zArrPos];
-  a1zArr[a1zArrPos] = accel1.convertToG(400, a1z) / runningAvgLen;
-  a1zArrPos = (a1zArrPos + 1) % runningAvgLen;
-  a2zRunning = a2zRunning + (accel2.convertToG(400, a2z) / runningAvgLen) - a2zArr[a2zArrPos];
-  a2zArr[a2zArrPos] = accel2.convertToG(400, a2z) / runningAvgLen;
-  a2zArrPos = (a2zArrPos + 1) % runningAvgLen;
-  avgArr[avgArrPos] = sqrt(abs(a1zRunning + a2zRunning) / (accelDist * 0.00001118));
+  accelOrientation();
+  
+  //progress running arrays arrays
+  a1Running = a1Running + (accel1.convertToG(400, a1val) / runningAvgLen) - a1Arr[a1ArrPos];
+  a1Arr[a1ArrPos] = accel1.convertToG(400, a1val) / runningAvgLen;
+  a1ArrPos = (a1ArrPos + 1) % runningAvgLen;
+  a2Running = a2Running + (accel2.convertToG(400, a2val) / runningAvgLen) - a2Arr[a2ArrPos];
+  a2Arr[a2ArrPos] = accel2.convertToG(400, a2val) / runningAvgLen;
+  a2ArrPos = (a2ArrPos + 1) % runningAvgLen;
+
+  //calculate RPM and add to array
+  if(accelSame){ //if they are in the same direction, they subtract from each other
+    avgArr[avgArrPos] = sqrt(abs(a1Running - a2Running) / (accelDist * 0.00001118));
+  }else{ //double negatives ig
+    avgArr[avgArrPos] = sqrt(abs(a1Running + a2Running) / (accelDist * 0.00001118));
+  }
+  
+
   rpm = avgArr[avgArrPos] * 1.5 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 2);
   avgArrPos = (avgArrPos + 1) % runningAvgLen;
   meltyTick = 1000000 / abs(rpm / 60);
