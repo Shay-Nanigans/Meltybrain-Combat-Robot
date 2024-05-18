@@ -2,27 +2,23 @@
 // #include <Watchdog.h>
 #include <Wire.h>
 #include "BluetoothSerial.h"
-#include "DShotRMT.h"
 
 //hardware
 LIS331 accel1;
 LIS331 accel2;
-BluetoothSerial bt;  //tx rx
-
-// Watchdog watchdog;
+BluetoothSerial bt;
+// Watchdog watchdog; //Watchdog is disabled until i fix it lol.
 
 //Drive pins
-// int pinLF = 6;
-// int pinLR = 5;
-// int pinRF = 10;
-// int pinRR = 9;
+int pinDrive = 4;
 
 //LED pins
-int pinLED = 8;
+int pinLED = 5;
 
 // Misc
 float accelDist = 10.0;
 long guideLEDwidth = 300;  //width of the guide
+long LEDoffset = -900;     //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 450;     //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
@@ -32,6 +28,7 @@ const int runningAvgLen = 90;     //how many datapoints to use for the running a
 int driveTimeout = 1000;          //how long it drives in a direction with timedmove
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
+int driveControlFreq = 8000;      //Oneshot125 is 8000hz
 
 //VARIABLES
 float rpm;
@@ -54,10 +51,6 @@ int tempdriveAngle = 0;
 long leftMotor = 0;
 long rightMotor = 0;
 void btwrite();
-
-const auto DSHOT_MODE = DSHOT300;
-const auto MOTOR01_PIN = GPIO_NUM_4;
-DShotRMT motor01(MOTOR01_PIN, RMT_CHANNEL_0);
 
 //accel outputs
 int16_t a1x;
@@ -95,11 +88,9 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  // pinMode(pinLF, OUTPUT);
-  // pinMode(pinLR, OUTPUT);
-  // pinMode(pinRF, OUTPUT);
-  // pinMode(pinRR, OUTPUT);
-  motor01.begin(DSHOT_MODE);
+  ledcSetup(0, 8000, 8);
+  ledcAttachPin(pinDrive, 0);
+  ledcWrite(0, 127);
 
   // LED initialize
   pinMode(pinLED, OUTPUT);
@@ -166,18 +157,14 @@ void setup() {
       if ((char)bt.read() == '?') { break; }
     }
   }
-  // accel1.setPowerMode(LIS331::POWER_DOWN);
-  // accel2.setPowerMode(LIS331::POWER_DOWN);
+
   // watchdog.enable(Watchdog::TIMEOUT_2S);
 }
 
 void loop() {
+  while(true){ //esp32 loop() doesnt run at full speed?????
   // watchdog.reset();
   if (heartbeat + timeout < millis()) {
-    // digitalWrite(pinRF, LOW);
-    // digitalWrite(pinRR, LOW);
-    // digitalWrite(pinLF, LOW);
-    // digitalWrite(pinLR, LOW);
 
     digitalWrite(pinLED, HIGH);
     driveSpeed = 0;
@@ -188,7 +175,7 @@ void loop() {
       Serial.println(F(" since last beat"));
       delay(1);
     }
-
+    ledcWrite(0, 0);
     checkCommands();
 
   } else {
@@ -198,7 +185,7 @@ void loop() {
       meltyLED();
       melty();
       ticks++;
-      // if (ticks % ticksPerAccelCalc == 0) {
+
       if (((direction - (driveWidth / 2)+(driveAngle * 10 * driveSpeed)) % 1800 < accelReadZone) or micros()>lastAccelRead+forceAccelReadTime) {
         readAccel();
         lastAccelRead=micros();
@@ -215,6 +202,7 @@ void loop() {
       calc();
       send();
     }
+  }
   }
 }
 
@@ -244,48 +232,34 @@ void calc() {
 
 void meltyLED() {
   //Guide LED
-  if ((direction + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
-    // PORTB |= 0b00000001;
+  if ((direction+ LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
+    digitalWrite(pinLED, HIGH);
   } else {
-    // PORTB &= 0b11111110;
+    digitalWrite(pinLED, LOW);
   }
 }
 
 void melty() {
-  // PORTD pins 0-7
-  // PORTB pins 8-13
-  // pinLF = 6
-  // pinLR = 5
-  // pinRF = 10
-  // pinRR = 9
+
   if (driveSpeed > 0) {
     //LeftDrive
     if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
-      // PORTD |= 0b01000000;
-      // PORTD &= 0b11011111;
-      // PORTD |= 0b00000000;
-      // PORTD &= 0b11011111;
+      ledcWrite(0, 127);
     } else {
-      // PORTD |= 0b00100000;
-      // PORTD &= 0b10111111;
+      ledcWrite(0, 159);
     }
-    //RightDrive
-    if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
-      // PORTB |= 0b00000010;
-      // PORTB &= 0b11111011;
-      // PORTB |= 0b00000000;
-      // PORTB &= 0b11111011;
-    } else {
-      // PORTB |= 0b00000100;
-      // PORTB &= 0b11111101;
-    }
+    // // RightDrive
+    // if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+    //   ledcWrite(1, 127);
+    // } else {
+    //   ledcWrite(1, 95);
+    // }
   } else {
-    // PORTB |= 0b00000100;
-    // PORTB &= 0b11111101;
-    // PORTD |= 0b00100000;
-    // PORTD &= 0b10111111;
+    ledcWrite(0, 159);
+    // ledcWrite(1, 95);
   }
 }
+
 void melt() {
   melting = 1;
   ticks = 0;
@@ -294,10 +268,7 @@ void melt() {
 }
 void freeze() {
   melting = 0;
-  // digitalWrite(pinRF, LOW);
-  // digitalWrite(pinRR, LOW);
-  // digitalWrite(pinLF, LOW);
-  // digitalWrite(pinLR, LOW);
+  ledcWrite(0, 127);
   digitalWrite(pinLED, HIGH);
 }
 
@@ -407,16 +378,13 @@ void set() {
     leftMotor = leftMotor * driveSpeed;
     rightMotor = rightMotor * driveSpeed;
 
-    // if (leftMotor > 0) {  //BACKWARDS
-    //   digitalWrite(pinLF, LOW);
-    //   digitalWrite(pinLR, HIGH);
-    // } else if (leftMotor < 0) {  //FORWARDS
-    //   digitalWrite(pinLR, LOW);
-    //   digitalWrite(pinLF, HIGH);
-    // } else {
-    //   digitalWrite(pinLF, LOW);
-    //   digitalWrite(pinLR, LOW);
-    // }
+    if (leftMotor > 0) {  //BACKWARDS
+      ledcWrite(0, 95);
+    } else if (leftMotor < 0) {  //FORWARDS
+      ledcWrite(0, 159);
+    } else {
+      ledcWrite(0, 127);
+    }
     // if (rightMotor > 0) {  //BACKWARDS
     //   digitalWrite(pinRF, LOW);
     //   digitalWrite(pinRR, HIGH);
