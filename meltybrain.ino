@@ -16,13 +16,13 @@ int pinDrive = 4;
 int pinLED = 5;
 
 // Misc
-float accelDist = 10.0;
-int accel1Orientation = 1; //orientation of accelerometer1: x=0 y=1 z=2
-int accel2Orientation = 1; //orientation of accelerometer2: x=0 y=1 z=2
-bool accelSame = true;     //whether one accel is flipped
-long guideLEDwidth = 300;  //width of the guide
-long LEDoffset = -900;     //direction of LED relative to "Forwards" in degrees*10
-long driveWidth = 450;     //valid times to go in direction
+float accelDist = 4.5;
+int accel1Orientation = 1;  //orientation of accelerometer1: x=0 y=1 z=2
+int accel2Orientation = 1;  //orientation of accelerometer2: x=0 y=1 z=2
+bool accelSame = true;      //whether one accel is flipped
+long guideLEDwidth = 300;   //width of the guide
+long LEDoffset = -900;      //direction of LED relative to "Forwards" in degrees*10
+long driveWidth = 450;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
 int ticksPerSend = 500;
@@ -32,19 +32,19 @@ int driveTimeout = 1000;          //how long it drives in a direction with timed
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
 int driveControlFreq = 8000;      //Oneshot125 is 8000hz
-    
+
 
 //VARIABLES
 float rpm;
 float meltyTick;     //number of microseconds per revolution
-long direction = 0;       //direction that the bot is pointing in melty mode, degrees * 10
+long direction = 0;  //direction that the bot is pointing in melty mode, degrees * 10
 long lastTick = 0;   //last time time was calculated
 long ticks = 0;      //loop counter
 bool melting = 0;    //if in spinny mode
 long heartbeat = 0;  //time of last heartbeat
 long meltyStart;     //time of engaging meltymode
 int driveTime = 0;   //last time timedmove was issued
-
+TaskHandle_t accelLoop;
 
 
 char currentCommand;
@@ -54,7 +54,7 @@ int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
 long leftMotor = 0;
 long rightMotor = 0;
-void btwrite();
+
 
 //accel outputs
 int16_t a1x;
@@ -96,7 +96,7 @@ void setup() {
   // motor initialize
   ledcSetup(0, 8000, 8);
   ledcAttachPin(pinDrive, 0);
-  ledcWrite(0, 127);
+  ledcWrite(0, 0);
 
   // LED initialize
   pinMode(pinLED, OUTPUT);
@@ -163,68 +163,83 @@ void setup() {
       if ((char)bt.read() == '?') { break; }
     }
   }
+  ledcWrite(0, 127);
+  delay(1000);
+  ledcWrite(0, 159);
+  delay(100);
+  ledcWrite(0, 127);
+  delay(500);
+  xTaskCreatePinnedToCore(accelLoopCode,"accelLoop",10000,NULL,1,&accelLoop, 0);
 
   // watchdog.enable(Watchdog::TIMEOUT_2S);
 }
 
 void loop() {
-  while(true){ //esp32 loop() doesnt run at full speed?????
-  // watchdog.reset();
-  if (heartbeat + timeout < millis()) {
+  while (true) {  //esp32 loop() doesnt run at full speed?????
+    // watchdog.reset();
+    if (heartbeat + timeout < millis()) {
 
-    digitalWrite(pinLED, HIGH);
-    driveSpeed = 0;
-    driveAngle = 0;
-    freeze();
-    if (millis() % 1000 == 0) {
-      Serial.print((millis() - heartbeat) / 1000);
-      Serial.println(F(" since last beat"));
-      delay(1);
-    }
-    ledcWrite(0, 0);
-    checkCommands();
-
-  } else {
-    driveCheck();
-    if (melting) {
-      calc();
-      meltyLED();
-      melty();
-      ticks++;
-
-      if (((direction - (driveWidth / 2)+(driveAngle * 10 * driveSpeed)) % 1800 < accelReadZone) or micros()>lastAccelRead+forceAccelReadTime) {
-        readAccel();
-        lastAccelRead=micros();
+      digitalWrite(pinLED, HIGH);
+      driveSpeed = 0;
+      driveAngle = 0;
+      freeze();
+      if (millis() % 1000 == 0) {
+        Serial.print((millis() - heartbeat) / 1000);
+        Serial.println(F(" since last beat"));
+        delay(1);
       }
-      if (ticks % ticksPerSend == 0) {
+      ledcWrite(0, 0);
+      checkCommands();
+
+    } else {
+      driveCheck();
+      if (melting) {
+        calc();
+        meltyLED();
+        melty();
+        ticks++;
+
+        //WE MULTITHREADED NOW
+        // if (((direction - (driveWidth / 2) + (driveAngle * 10 * driveSpeed)) % 1800 < accelReadZone) or micros() > lastAccelRead + forceAccelReadTime) {
+        //   readAccel();
+        //   lastAccelRead = micros();
+        // }
+
+        if (ticks % ticksPerSend == 0) {
+          send();
+        }
+        if (ticks % ticksPerCheck == 0) {
+          checkCommands();
+        }
+      } else {
+        checkCommands();
+        // if (!driveSpeed) { readAccel(); }
+        calc();
         send();
       }
-      if (ticks % ticksPerCheck == 0) {
-        checkCommands();
-      }
-    } else {
-      checkCommands();
-      // if (!driveSpeed) { readAccel(); }
-      calc();
-      send();
     }
   }
-  }
 }
-void accelOrientation(){
-  if (accel1Orientation = 0){
+void accelOrientation() {
+  if (accel1Orientation = 0) {
     a1val = a1x;
-  }else if (accel1Orientation = 1){
+  } else if (accel1Orientation = 1) {
     a1val = a1y;
-  }else{ //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
+  } else {  //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
     a1val = a1z;
   }
-  if (accel2Orientation = 0){
+  if (accel2Orientation = 0) {
     a2val = a2x;
-  }else if (accel2Orientation = 1){
+  } else if (accel2Orientation = 1) {
     a2val = a2y;
-  }else{ //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
+  } else {  //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
     a2val = a2z;
+  }
+}
+
+void accelLoopCode(void* pvParameters) {
+  while (true) {
+    readAccel();
   }
 }
 //Reads accelerometers and calculates RPM and ticktime
@@ -232,7 +247,7 @@ void readAccel() {
   accel1.readAxes(a1x, a1y, a1z);
   accel2.readAxes(a2x, a2y, a2z);
   accelOrientation();
-  
+
   //progress running arrays arrays
   a1Running = a1Running + (accel1.convertToG(400, a1val) / runningAvgLen) - a1Arr[a1ArrPos];
   a1Arr[a1ArrPos] = accel1.convertToG(400, a1val) / runningAvgLen;
@@ -242,12 +257,12 @@ void readAccel() {
   a2ArrPos = (a2ArrPos + 1) % runningAvgLen;
 
   //calculate RPM and add to array
-  if(accelSame){ //if they are in the same direction, they subtract from each other
+  if (accelSame) {  //if they are in the same direction, they subtract from each other
     avgArr[avgArrPos] = sqrt(abs(a1Running - a2Running) / (accelDist * 0.00001118));
-  }else{ //double negatives ig
+  } else {  //double negatives ig
     avgArr[avgArrPos] = sqrt(abs(a1Running + a2Running) / (accelDist * 0.00001118));
   }
-  
+
 
   rpm = avgArr[avgArrPos] * 1.5 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 2);
   avgArrPos = (avgArrPos + 1) % runningAvgLen;
@@ -264,7 +279,7 @@ void calc() {
 
 void meltyLED() {
   //Guide LED
-  if ((direction+ LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
+  if ((direction + LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
     digitalWrite(pinLED, HIGH);
   } else {
     digitalWrite(pinLED, LOW);
@@ -294,9 +309,10 @@ void melty() {
 
 void melt() {
   melting = 1;
-  ticks = 0;
+  ticks = 1;
   meltyStart = millis();
   Serial.println("MELTY TIME");
+  delay(2);
 }
 void freeze() {
   melting = 0;
@@ -460,8 +476,8 @@ void send() {
   // btwrite(str);
   // btwrite("*");
 }
-void btwrite(String str){
+void btwrite(String str) {
   uint8_t buf[str.length()];
-  memcpy(buf,str.c_str(),str.length());
-  bt.write(buf,str.length());
+  memcpy(buf, str.c_str(), str.length());
+  bt.write(buf, str.length());
 }
