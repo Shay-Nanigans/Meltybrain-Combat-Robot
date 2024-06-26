@@ -10,10 +10,14 @@ BluetoothSerial bt;
 // Watchdog watchdog; //Watchdog is disabled until i fix it lol.
 
 //Drive pins
-int pinDrive = 4;
-
+int pinLeftDrive = 4;
+int pinRightDrive = 6;
 //LED pins
 int pinLED = 5;
+
+//whatever the fuck ledc channels are?
+int chanLeftDrive = 0;
+int chanRightDrive = 1;
 
 // Misc
 float accelDist = 4.5;
@@ -49,9 +53,10 @@ TaskHandle_t accelLoop;
 
 char currentCommand;
 int driveAngle = 0;   //out of 360
-bool driveSpeed = 0;  //0 to 1
+int driveSpeed = 0;  //0 to 1
 int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
+int tempweaponSpeed = 0; //MELTY SPEED
 long leftMotor = 0;
 long rightMotor = 0;
 
@@ -94,9 +99,13 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  ledcSetup(0, 8000, 8);
-  ledcAttachPin(pinDrive, 0);
-  ledcWrite(0, 0);
+  ledcSetup(chanLeftDrive, 8000, 10);
+  ledcAttachPin(pinLeftDrive, chanLeftDrive);
+  setMotor(chanLeftDrive, 0);
+
+  ledcSetup(chanRightDrive, 8000, 10);
+  ledcAttachPin(pinRightDrive, chanRightDrive);
+  setMotor(chanRightDrive, 0);
 
   // LED initialize
   pinMode(pinLED, OUTPUT);
@@ -163,11 +172,14 @@ void setup() {
       if ((char)bt.read() == '?') { break; }
     }
   }
-  ledcWrite(0, 127);
+  setMotor(chanRightDrive, 0);
+  setMotor(chanRightDrive, 0);
   delay(1000);
-  ledcWrite(0, 159);
+  setMotor(chanRightDrive, 255);
+  setMotor(chanRightDrive, 255);
   delay(100);
-  ledcWrite(0, 127);
+  setMotor(chanRightDrive, 0);
+  setMotor(chanRightDrive, 0);
   delay(500);
   xTaskCreatePinnedToCore(accelLoopCode,"accelLoop",10000,NULL,1,&accelLoop, 0);
 
@@ -188,7 +200,8 @@ void loop() {
         Serial.println(F(" since last beat"));
         delay(1);
       }
-      ledcWrite(0, 0);
+      setMotor(chanLeftDrive, 0);
+      setMotor(chanRightDrive, 0);
       checkCommands();
 
     } else {
@@ -291,19 +304,19 @@ void melty() {
   if (driveSpeed > 0) {
     //LeftDrive
     if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
-      ledcWrite(0, 127);
+      setMotor(chanLeftDrive, 0);
     } else {
-      ledcWrite(0, 159);
+      setMotor(chanLeftDrive, 255);
     }
     // // RightDrive
-    // if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
-    //   ledcWrite(1, 127);
-    // } else {
-    //   ledcWrite(1, 95);
-    // }
+    if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+      setMotor(chanRightDrive, 0);
+    } else {
+      setMotor(chanRightDrive, -255);
+    }
   } else {
-    ledcWrite(0, 159);
-    // ledcWrite(1, 95);
+    setMotor(chanLeftDrive, 255);
+    setMotor(chanRightDrive, -255);
   }
 }
 
@@ -316,7 +329,8 @@ void melt() {
 }
 void freeze() {
   melting = 0;
-  ledcWrite(0, 127);
+  setMotor(chanLeftDrive, 0);
+  setMotor(chanRightDrive, 0);
   digitalWrite(pinLED, HIGH);
 }
 
@@ -338,38 +352,7 @@ void checkCommands() {
     } else if (nextChar == 'm') {
       if (currentCommand == 'm') { freeze(); }
       currentCommand = 'm';
-    } else if (nextChar == 'U') {
-      driveTime = millis();
-      driveAngle = 0;
-      driveSpeed = 1;
-    } else if (nextChar == 'I') {
-      driveTime = millis();
-      driveAngle = 45;
-      driveSpeed = 1;
-    } else if (nextChar == 'O') {
-      driveTime = millis();
-      driveAngle = 90;
-      driveSpeed = 1;
-    } else if (nextChar == 'P') {
-      driveTime = millis();
-      driveAngle = 135;
-      driveSpeed = 1;
-    } else if (nextChar == 'H') {
-      driveTime = millis();
-      driveAngle = 180;
-      driveSpeed = 1;
-    } else if (nextChar == 'J') {
-      driveTime = millis();
-      driveAngle = 225;
-      driveSpeed = 1;
-    } else if (nextChar == 'K') {
-      driveTime = millis();
-      driveAngle = 270;
-      driveSpeed = 1;
-    } else if (nextChar == 'L') {
-      driveTime = millis();
-      driveAngle = 315;
-      driveSpeed = 1;
+
     } else if (nextChar == '!') {
       set();
     } else {
@@ -381,6 +364,8 @@ void checkCommands() {
         case 'A':
           tempdriveAngle = tempdriveAngle * 10 + nextChar - 48;
           break;
+        case 'W':
+          tempweaponSpeed = tempweaponSpeed * 10 + nextChar - 48;
       }
     }
   }
@@ -394,56 +379,32 @@ void set() {
   }
   driveSpeed = tempdriveSpeed > 0;
   driveAngle = tempdriveAngle;
-  if (!melting) {
-    //Left
-    if (driveAngle < 90) {
-      leftMotor = 255;
-    } else if (driveAngle < 180) {
-      leftMotor = 255 - (510 * (driveAngle - 90) / 90);
-    } else if (driveAngle < 270) {
-      leftMotor = -255;
-    } else if (driveAngle < 360) {
-      leftMotor = 510 * (driveAngle - 270) / 90 - 255;
-    } else if (driveAngle == 360) {
-      leftMotor = 255;
-    } else {
-      leftMotor = 0;
-    }
-    //Right
-    if (driveAngle < 90) {
-      rightMotor = 255 - (510 * driveAngle / 90);
-    } else if (driveAngle < 180) {
-      rightMotor = -255;
-    } else if (driveAngle < 270) {
-      rightMotor = 510 * (driveAngle - 180) / 90 - 255;
-    } else if (driveAngle < 360) {
-      rightMotor = 255;
-    } else if (driveAngle == 360) {
-      rightMotor = 255;
-    } else {
-      rightMotor = 0;
-    }
-    leftMotor = leftMotor * driveSpeed;
-    rightMotor = rightMotor * driveSpeed;
+  if (!melting) { //Normal driving
 
-    if (leftMotor > 0) {  //BACKWARDS
-      ledcWrite(0, 95);
-    } else if (leftMotor < 0) {  //FORWARDS
-      ledcWrite(0, 159);
-    } else {
-      ledcWrite(0, 127);
+    //Crude mixing
+    leftMotor = driveSpeed*(cos(float(driveAngle)*PI/180)+sin(float(driveAngle)*PI/180)/2);
+    rightMotor = driveSpeed*(cos(float(driveAngle)*PI/180)-sin(float(driveAngle)*PI/180)/2);
+
+    //clamp to 255
+    if(max(abs(leftMotor),abs(rightMotor))>255){
+      int m = max(abs(leftMotor),abs(rightMotor));
+      leftMotor = leftMotor * 255 /m ;
+      rightMotor = rightMotor *255  / m;
     }
-    // if (rightMotor > 0) {  //BACKWARDS
-    //   digitalWrite(pinRF, LOW);
-    //   digitalWrite(pinRR, HIGH);
-    // } else if (rightMotor < 0) {  //FORWARDS
-    //   digitalWrite(pinRR, LOW);
-    //   digitalWrite(pinRF, HIGH);
-    // } else {
-    //   digitalWrite(pinRF, LOW);
-    //   digitalWrite(pinRR, LOW);
-    // }
+
+    //write to motors
+      setMotor(chanLeftDrive, leftMotor);
+      setMotor(chanRightDrive, rightMotor);
   }
+}
+
+//set ledcWrite for drive motor
+void setMotor(int chan, int speed){
+  //clamp between -255 to 255
+    if (abs(speed)>255){speed=255;}
+    else if (abs(speed)<-255){speed=-255;}
+  //
+  ledcWrite(chan, 511+speed);
 }
 void send() {
   char str[20];
