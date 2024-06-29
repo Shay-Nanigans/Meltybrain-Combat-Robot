@@ -99,11 +99,11 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  ledcSetup(chanLeftDrive, 8000, 8);
+  ledcSetup(chanLeftDrive, 4000, 11);
   ledcAttachPin(pinLeftDrive, chanLeftDrive);
   setMotor(chanLeftDrive, 0);
 
-  ledcSetup(chanRightDrive, 8000, 8);
+  ledcSetup(chanRightDrive, 4000, 11);
   ledcAttachPin(pinRightDrive, chanRightDrive);
   setMotor(chanRightDrive, 0);
 
@@ -315,8 +315,8 @@ void melty() {
       setMotor(chanRightDrive, -255);
     }
   } else {
-    setMotor(chanLeftDrive, 128);
-    setMotor(chanRightDrive, -128);
+    setMotor(chanLeftDrive, 255);
+    setMotor(chanRightDrive, -255);
   }
 }
 
@@ -411,18 +411,19 @@ void set() {
     setMotor(chanLeftDrive, leftMotor);
     setMotor(chanRightDrive, rightMotor);
   }
+  Serial.println("");
 }
 
 //set ledcWrite for drive motor
 void setMotor(int chan, int speed) {
   //clamp between -255 to 255
-  if (abs(speed) > 253) {
-    speed = 253;
-  } else if (abs(speed) < -253) {
-    speed = -253;
+  if (abs(speed) > 250) {
+    speed = 250;
+  } else if (abs(speed) < -250) {
+    speed = -250;
   }
   //
-  ledcWrite(chan, 127 + (speed / 4));
+  ledcWrite(chan, 512 + speed);
 }
 void send() {
   char str[20];
