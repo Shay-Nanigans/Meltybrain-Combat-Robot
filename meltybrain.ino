@@ -11,7 +11,7 @@ BluetoothSerial bt;
 
 //Drive pins
 int pinLeftDrive = 4;
-int pinRightDrive = 6;
+int pinRightDrive = 16;
 //LED pins
 int pinLED = 5;
 
@@ -52,11 +52,11 @@ TaskHandle_t accelLoop;
 
 
 char currentCommand;
-int driveAngle = 0;   //out of 360
+int driveAngle = 0;  //out of 360
 int driveSpeed = 0;  //0 to 1
 int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
-int tempweaponSpeed = 0; //MELTY SPEED
+int tempweaponSpeed = 0;  //MELTY SPEED
 long leftMotor = 0;
 long rightMotor = 0;
 
@@ -99,11 +99,11 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  ledcSetup(chanLeftDrive, 8000, 10);
+  ledcSetup(chanLeftDrive, 8000, 8);
   ledcAttachPin(pinLeftDrive, chanLeftDrive);
   setMotor(chanLeftDrive, 0);
 
-  ledcSetup(chanRightDrive, 8000, 10);
+  ledcSetup(chanRightDrive, 8000, 8);
   ledcAttachPin(pinRightDrive, chanRightDrive);
   setMotor(chanRightDrive, 0);
 
@@ -181,7 +181,7 @@ void setup() {
   setMotor(chanRightDrive, 0);
   setMotor(chanRightDrive, 0);
   delay(500);
-  xTaskCreatePinnedToCore(accelLoopCode,"accelLoop",10000,NULL,1,&accelLoop, 0);
+  xTaskCreatePinnedToCore(accelLoopCode, "accelLoop", 10000, NULL, 1, &accelLoop, 0);
 
   // watchdog.enable(Watchdog::TIMEOUT_2S);
 }
@@ -315,8 +315,8 @@ void melty() {
       setMotor(chanRightDrive, -255);
     }
   } else {
-    setMotor(chanLeftDrive, 255);
-    setMotor(chanRightDrive, -255);
+    setMotor(chanLeftDrive, 128);
+    setMotor(chanRightDrive, -128);
   }
 }
 
@@ -352,7 +352,22 @@ void checkCommands() {
     } else if (nextChar == 'm') {
       if (currentCommand == 'm') { freeze(); }
       currentCommand = 'm';
-
+    } else if (nextChar == 'H') {
+      changeAccelDist(1);
+    } else if (nextChar == 'J') {
+      changeAccelDist(0.1);
+    } else if (nextChar == 'K') {
+      changeAccelDist(0.01);
+    } else if (nextChar == 'L') {
+      changeAccelDist(0.001);
+    } else if (nextChar =='h') {
+      changeAccelDist(-1);
+    } else if (nextChar =='j') {
+      changeAccelDist(-0.1);
+    } else if (nextChar =='k') {
+      changeAccelDist(-0.01);
+      }else if (nextChar=='l'){
+      changeAccelDist(-0.001);
     } else if (nextChar == '!') {
       set();
     } else {
@@ -377,34 +392,37 @@ void set() {
   if (tempdriveAngle > 359 || tempdriveAngle < 0) {
     return;
   }
-  driveSpeed = tempdriveSpeed > 0;
+  driveSpeed = tempdriveSpeed;
   driveAngle = tempdriveAngle;
-  if (!melting) { //Normal driving
+  if (!melting) {  //Normal driving
 
     //Crude mixing
-    leftMotor = driveSpeed*(cos(float(driveAngle)*PI/180)+sin(float(driveAngle)*PI/180)/2);
-    rightMotor = driveSpeed*(cos(float(driveAngle)*PI/180)-sin(float(driveAngle)*PI/180)/2);
+    leftMotor = driveSpeed * (cos(float(driveAngle) * PI / 180) + sin(float(driveAngle) * PI / 180) / 2);
+    rightMotor = driveSpeed * (cos(float(driveAngle) * PI / 180) - sin(float(driveAngle) * PI / 180) / 2);
 
     //clamp to 255
-    if(max(abs(leftMotor),abs(rightMotor))>255){
-      int m = max(abs(leftMotor),abs(rightMotor));
-      leftMotor = leftMotor * 255 /m ;
-      rightMotor = rightMotor *255  / m;
+    if (max(abs(leftMotor), abs(rightMotor)) > 255) {
+      int m = max(abs(leftMotor), abs(rightMotor));
+      leftMotor = leftMotor * 255 / m;
+      rightMotor = rightMotor * 255 / m;
     }
 
     //write to motors
-      setMotor(chanLeftDrive, leftMotor);
-      setMotor(chanRightDrive, rightMotor);
+    setMotor(chanLeftDrive, leftMotor);
+    setMotor(chanRightDrive, rightMotor);
   }
 }
 
 //set ledcWrite for drive motor
-void setMotor(int chan, int speed){
+void setMotor(int chan, int speed) {
   //clamp between -255 to 255
-    if (abs(speed)>255){speed=255;}
-    else if (abs(speed)<-255){speed=-255;}
+  if (abs(speed) > 253) {
+    speed = 253;
+  } else if (abs(speed) < -253) {
+    speed = -253;
+  }
   //
-  ledcWrite(chan, 511+speed);
+  ledcWrite(chan, 127 + (speed / 4));
 }
 void send() {
   char str[20];
@@ -431,14 +449,53 @@ void send() {
   dtostrf(60000000 / meltyTick, 1, 0, str);
   btwrite(str);
   btwrite("*");
-  // delay(2);
-  // btwrite("*Brpm accel:");
-  // dtostrf(rpmBig, 1, 0, str);
-  // btwrite(str);
-  // btwrite("*");
+
+  //send accel values
+  btwrite("*BA1:");
+  int tempval = accel1.convertToG(400, a1val);
+  if (tempval<0){
+    btwrite("-");
+    tempval=tempval*-1;
+  }else{
+    btwrite("+");
+  }
+  if (tempval<100){
+    btwrite("0");
+  }
+    if (tempval<10){
+    btwrite("0");
+  }
+  dtostrf(tempval, 1, 0, str);
+  btwrite(str);
+  btwrite(" A2:");
+  tempval = accel2.convertToG(400, a1val);
+  if (tempval<0){
+    btwrite("-");
+    tempval=tempval*-1;
+  }else{
+    btwrite("+");
+  }
+  if (tempval<100){
+    btwrite("0");
+  }
+    if (tempval<10){
+    btwrite("0");
+  }
+  dtostrf(tempval, 1, 0, str);
+  btwrite(str);
+  btwrite("*");
+
 }
 void btwrite(String str) {
   uint8_t buf[str.length()];
   memcpy(buf, str.c_str(), str.length());
   bt.write(buf, str.length());
+}
+void changeAccelDist(float offset) {
+  char str[20];
+  accelDist += offset;
+  btwrite("*Xdist:");
+  dtostrf(accelDist, 1, 2, str);
+  btwrite(str);
+  btwrite("*");
 }
