@@ -20,7 +20,7 @@ int chanLeftDrive = 0;
 int chanRightDrive = 1;
 
 // Misc
-float accelDist = 4.5;
+float accelDist = 3.745;
 int accel1Orientation = 1;  //orientation of accelerometer1: x=0 y=1 z=2
 int accel2Orientation = 1;  //orientation of accelerometer2: x=0 y=1 z=2
 bool accelSame = true;      //whether one accel is flipped
@@ -35,8 +35,16 @@ const int runningAvgLen = 90;     //how many datapoints to use for the running a
 int driveTimeout = 1000;          //how long it drives in a direction with timedmove
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
-int driveControlFreq = 8000;      //Oneshot125 is 8000hz
+int driveControlFreq = 4000;      //Oneshot125 is 4000hz
+int maxPower = 220;               //Maximum PWM duty (max 255)
+float rpmPerPower = 6;             //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm. 
+int powerFloor = 32;              //minimum rpmPerPower duty (max 255)
 
+//voltage reader
+float r1 = 47000;
+float r2 = 10250;
+int voltagePin = 33;
+float fuckupvoltmult = 1.31; //fuck this number, it should be 1
 
 //VARIABLES
 float rpm;
@@ -49,7 +57,7 @@ long heartbeat = 0;  //time of last heartbeat
 long meltyStart;     //time of engaging meltymode
 int driveTime = 0;   //last time timedmove was issued
 TaskHandle_t accelLoop;
-
+float battVoltage = 0;
 
 char currentCommand;
 int driveAngle = 0;  //out of 360
@@ -88,6 +96,7 @@ void setup() {
   Wire.begin();
   Serial.println(F("Hello!"));
 
+
   // accel initialize
   accel1.setI2CAddr(0x18);
   accel2.setI2CAddr(0x19);
@@ -99,11 +108,11 @@ void setup() {
   accel2.setODR(LIS331::DR_1000HZ);
 
   // motor initialize
-  ledcSetup(chanLeftDrive, 4000, 11);
+  ledcSetup(chanLeftDrive, driveControlFreq, 11);
   ledcAttachPin(pinLeftDrive, chanLeftDrive);
   setMotor(chanLeftDrive, 0);
 
-  ledcSetup(chanRightDrive, 4000, 11);
+  ledcSetup(chanRightDrive, driveControlFreq, 11);
   ledcAttachPin(pinRightDrive, chanRightDrive);
   setMotor(chanRightDrive, 0);
 
@@ -121,10 +130,13 @@ void setup() {
   float a1Total = 0;
   float a2Total = 0;
   while (true) {
+    
     readAccel();
     a1Total += accel1.convertToG(400, a1val);
     a2Total += accel1.convertToG(400, a2val);
     if (i % 100 == 0) {
+      Serial.print("Voltage: ");
+      Serial.println(readVoltage());
       btwrite("*Z0*");     //RPM
       btwrite("*Xdist:");  //Accel dist
       dtostrf(accelDist, 1, 2, str);
@@ -417,13 +429,28 @@ void set() {
 //set ledcWrite for drive motor
 void setMotor(int chan, int speed) {
   //clamp between -255 to 255
-  if (abs(speed) > 250) {
-    speed = 250;
-  } else if (abs(speed) < -250) {
-    speed = -250;
+  if (abs(speed) > maxPower) {
+    speed = maxPower;
+  } else if (abs(speed) < -maxPower) {
+    speed = -maxPower;
   }
   //
   ledcWrite(chan, 512 + speed);
+}
+
+//ramp up the meltybrain in melty mode to stop the fucking pulleys from melting.
+void setMeltyMotor(int chan, int speed){
+  if (abs(speed)>rpm/rpmPerPower){
+    speed = abs(speed)/speed*rpm/rpmPerPower;
+    if (abs(speed)<powerFloor){
+      speed = abs(speed)/speed*powerFloor;
+    }
+  }
+  setMotor(chan, speed);
+}
+float readVoltage(){
+  battVoltage = fuckupvoltmult*(r1+r2)*3.3*analogRead(voltagePin)/4096/r2;
+  return battVoltage;
 }
 void send() {
   char str[20];
@@ -486,6 +513,11 @@ void send() {
   btwrite(str);
   btwrite("*");
 
+  btwrite("*NBatt: ");
+  dtostrf(readVoltage(), 1, 1, str);
+  btwrite(str);
+  btwrite("V*");
+
 }
 void btwrite(String str) {
   uint8_t buf[str.length()];
@@ -496,7 +528,7 @@ void changeAccelDist(float offset) {
   char str[20];
   accelDist += offset;
   btwrite("*Xdist:");
-  dtostrf(accelDist, 1, 2, str);
+  dtostrf(accelDist, 1, 3, str);
   btwrite(str);
   btwrite("*");
 }
