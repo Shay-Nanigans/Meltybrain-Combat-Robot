@@ -24,8 +24,8 @@ float accelDist = 3.745;
 int accel1Orientation = 1;  //orientation of accelerometer1: x=0 y=1 z=2
 int accel2Orientation = 1;  //orientation of accelerometer2: x=0 y=1 z=2
 bool accelSame = true;      //whether one accel is flipped
-long guideLEDwidth = 300;   //width of the guide
-long LEDoffset = -900;      //direction of LED relative to "Forwards" in degrees*10
+long guideLEDwidth = 60;   //width of the guide
+long LEDoffset = 0;      //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 450;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
@@ -37,7 +37,7 @@ int accelReadZone = 450;          // how large of an area after drive width that
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
 int driveControlFreq = 4000;      //Oneshot125 is 4000hz
 int maxPower = 220;               //Maximum PWM duty (max 255)
-float rpmPerPower = 6;             //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm. 
+float rpmPerPower = 10;             //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm. 
 int powerFloor = 32;              //minimum rpmPerPower duty (max 255)
 
 //voltage reader
@@ -65,6 +65,7 @@ int driveSpeed = 0;  //0 to 1
 int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
 int tempweaponSpeed = 0;  //MELTY SPEED
+int weaponSpeed = 0;
 long leftMotor = 0;
 long rightMotor = 0;
 
@@ -318,17 +319,17 @@ void melty() {
     if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
       setMotor(chanLeftDrive, 0);
     } else {
-      setMotor(chanLeftDrive, 255);
+      setMotor(chanLeftDrive, -weaponSpeed);
     }
     // // RightDrive
     if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
       setMotor(chanRightDrive, 0);
     } else {
-      setMotor(chanRightDrive, -255);
+      setMotor(chanRightDrive, weaponSpeed);
     }
   } else {
-    setMotor(chanLeftDrive, 255);
-    setMotor(chanRightDrive, -255);
+    setMotor(chanLeftDrive, -weaponSpeed);
+    setMotor(chanRightDrive, weaponSpeed);
   }
 }
 
@@ -352,6 +353,9 @@ void checkCommands() {
     Serial.print(nextChar);
     if (nextChar == '?') {
       heartbeat = millis();
+    } else if (nextChar == 'W') {
+      tempweaponSpeed = 0;
+      currentCommand = 'W';
     } else if (nextChar == 'R') {
       tempdriveSpeed = 0;
       currentCommand = 'R';
@@ -401,6 +405,9 @@ void driveCheck() {
   if (millis() > driveTime + driveTimeout) { driveSpeed = 0; }
 }
 void set() {
+  if (currentCommand=='W'){
+    weaponSpeed = tempweaponSpeed;
+  }
   if (tempdriveAngle > 359 || tempdriveAngle < 0) {
     return;
   }
@@ -429,9 +436,9 @@ void set() {
 //set ledcWrite for drive motor
 void setMotor(int chan, int speed) {
   //clamp between -255 to 255
-  if (abs(speed) > maxPower) {
+  if (speed > maxPower) {
     speed = maxPower;
-  } else if (abs(speed) < -maxPower) {
+  } else if (speed < -maxPower) {
     speed = -maxPower;
   }
   //
@@ -446,6 +453,7 @@ void setMeltyMotor(int chan, int speed){
       speed = abs(speed)/speed*powerFloor;
     }
   }
+  
   setMotor(chan, speed);
 }
 float readVoltage(){
