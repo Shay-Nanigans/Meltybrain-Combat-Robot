@@ -20,18 +20,18 @@ int chanLeftDrive = 0;
 int chanRightDrive = 1;
 
 // Misc
-float accelDist = 3.745;
-int accel1Orientation = 1;  //orientation of accelerometer1: x=0 y=1 z=2
-int accel2Orientation = 1;  //orientation of accelerometer2: x=0 y=1 z=2
-bool accelSame = true;      //whether one accel is flipped
-long guideLEDwidth = 60;   //width of the guide
+float accelDist = 7.5;
+int accel1Orientation = 2;  //orientation of accelerometer1: x=0 y=1 z=2
+int accel2Orientation = 2;  //orientation of accelerometer2: x=0 y=1 z=2
+bool accelSame = false;      //whether one accel is flipped
+long guideLEDwidth = 120;   //width of the guide
 long LEDoffset = 0;      //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 450;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
 int ticksPerSend = 500;
 int timeout = 3000;               //milliseconds since last heartbeat to be declared dead
-const int runningAvgLen = 90;     //how many datapoints to use for the running average
+const int runningAvgLen = 50;     //how many datapoints to use for the running average
 int driveTimeout = 1000;          //how long it drives in a direction with timedmove
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
@@ -163,7 +163,7 @@ void setup() {
       Serial.print(" Y1:");
       Serial.print(accel1.convertToG(400, a1y));
       Serial.print(" Z1:");
-      Serial.print(accel1.convertToG(400, a1z));
+      Serial.print(accel1.convertToG(400, a1z));char
       Serial.print("\n");
 
       Serial.print("X2:");
@@ -247,16 +247,16 @@ void loop() {
   }
 }
 void accelOrientation() {
-  if (accel1Orientation = 0) {
+  if (accel1Orientation == 0) {
     a1val = a1x;
-  } else if (accel1Orientation = 1) {
+  } else if (accel1Orientation == 1) {
     a1val = a1y;
   } else {  //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
     a1val = a1z;
   }
-  if (accel2Orientation = 0) {
+  if (accel2Orientation == 0) {
     a2val = a2x;
-  } else if (accel2Orientation = 1) {
+  } else if (accel2Orientation == 1) {
     a2val = a2y;
   } else {  //it may seem like im picking the z axis as my favorite. Yes. Yes I am.
     a2val = a2z;
@@ -290,7 +290,8 @@ void readAccel() {
   }
 
 
-  rpm = avgArr[avgArrPos] * 1.5 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 2);
+  // rpm = avgArr[avgArrPos] * 1.5 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 2);
+  rpm = avgArr[avgArrPos];
   avgArrPos = (avgArrPos + 1) % runningAvgLen;
   meltyTick = 1000000 / abs(rpm / 60);
 }
