@@ -20,13 +20,13 @@ int chanLeftDrive = 0;
 int chanRightDrive = 1;
 
 // Misc
-float accelDist = 7.5;
+float accelDist = 8.23;
 int accel1Orientation = 2;  //orientation of accelerometer1: x=0 y=1 z=2
 int accel2Orientation = 2;  //orientation of accelerometer2: x=0 y=1 z=2
-bool accelSame = false;      //whether one accel is flipped
-long guideLEDwidth = 120;   //width of the guide
-long LEDoffset = 0;      //direction of LED relative to "Forwards" in degrees*10
-long driveWidth = 450;      //valid times to go in direction
+bool accelSame = false;     //whether one accel is flipped
+long guideLEDwidth = 900;   //width of the guide
+long LEDoffset = 0;         //direction of LED relative to "Forwards" in degrees*10
+long driveWidth = 300;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
 int ticksPerSend = 500;
@@ -37,14 +37,14 @@ int accelReadZone = 450;          // how large of an area after drive width that
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
 int driveControlFreq = 4000;      //Oneshot125 is 4000hz
 int maxPower = 220;               //Maximum PWM duty (max 255)
-float rpmPerPower = 10;             //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm. 
+float rpmPerPower = 10;           //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm.
 int powerFloor = 32;              //minimum rpmPerPower duty (max 255)
 
 //voltage reader
 float r1 = 47000;
 float r2 = 10250;
 int voltagePin = 33;
-float fuckupvoltmult = 1.31; //fuck this number, it should be 1
+float fuckupvoltmult = 1.31;  //fuck this number, it should be 1
 
 //VARIABLES
 float rpm;
@@ -131,7 +131,7 @@ void setup() {
   float a1Total = 0;
   float a2Total = 0;
   while (true) {
-    
+
     readAccel();
     a1Total += accel1.convertToG(400, a1val);
     a2Total += accel1.convertToG(400, a2val);
@@ -163,7 +163,7 @@ void setup() {
       Serial.print(" Y1:");
       Serial.print(accel1.convertToG(400, a1y));
       Serial.print(" Z1:");
-      Serial.print(accel1.convertToG(400, a1z));char
+      Serial.print(accel1.convertToG(400, a1z));
       Serial.print("\n");
 
       Serial.print("X2:");
@@ -218,7 +218,7 @@ void loop() {
       checkCommands();
 
     } else {
-      driveCheck();
+      // driveCheck();
       if (melting) {
         calc();
         meltyLED();
@@ -237,6 +237,7 @@ void loop() {
         if (ticks % ticksPerCheck == 0) {
           checkCommands();
         }
+        delay(1);
       } else {
         checkCommands();
         // if (!driveSpeed) { readAccel(); }
@@ -290,8 +291,8 @@ void readAccel() {
   }
 
 
-  // rpm = avgArr[avgArrPos] * 1.5 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 2);
-  rpm = avgArr[avgArrPos];
+  rpm = avgArr[avgArrPos] * 1.25 - (avgArr[(avgArrPos + 1) % runningAvgLen] / 4);
+  // rpm = avgArr[avgArrPos];
   avgArrPos = (avgArrPos + 1) % runningAvgLen;
   meltyTick = 1000000 / abs(rpm / 60);
 }
@@ -314,18 +315,35 @@ void meltyLED() {
 }
 
 void melty() {
-
-  if (driveSpeed > 0) {
+  Serial.println(driveSpeed);
+  if (driveSpeed > 3) {
     //LeftDrive
+    Serial.println((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600);
+
+    // if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
+    //   setMotor(chanLeftDrive, 0);
+    //   // setMotor(chanRightDrive, 255);
+    // } else {
+    //   setMotor(chanLeftDrive, -weaponSpeed);
+    //   // setMotor(chanRightDrive, weaponSpeed);
+    // }
+    // // RightDrive
+    // if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+    //   // setMotor(chanLeftDrive, -255);
+    //   setMotor(chanRightDrive, 0);
+    // } else {
+    //   // setMotor(chanLeftDrive, -weaponSpeed);
+    //   setMotor(chanRightDrive, weaponSpeed);
+    // }
     if ((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600 < driveWidth) {
       setMotor(chanLeftDrive, 0);
-    } else {
-      setMotor(chanLeftDrive, -weaponSpeed);
-    }
-    // // RightDrive
-    if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+      setMotor(chanRightDrive, 255);
+      // Backwards
+    } else if ((direction + (driveAngle * 10) - 1800 + (driveWidth / 2)) % 3600 < driveWidth) {
+      setMotor(chanLeftDrive, -255);
       setMotor(chanRightDrive, 0);
     } else {
+      setMotor(chanLeftDrive, -weaponSpeed);
       setMotor(chanRightDrive, weaponSpeed);
     }
   } else {
@@ -377,13 +395,13 @@ void checkCommands() {
       changeAccelDist(0.01);
     } else if (nextChar == 'L') {
       changeAccelDist(0.001);
-    } else if (nextChar =='h') {
+    } else if (nextChar == 'h') {
       changeAccelDist(-1);
-    } else if (nextChar =='j') {
+    } else if (nextChar == 'j') {
       changeAccelDist(-0.1);
-    } else if (nextChar =='k') {
+    } else if (nextChar == 'k') {
       changeAccelDist(-0.01);
-      }else if (nextChar=='l'){
+    } else if (nextChar == 'l') {
       changeAccelDist(-0.001);
     } else if (nextChar == '!') {
       set();
@@ -406,7 +424,7 @@ void driveCheck() {
   if (millis() > driveTime + driveTimeout) { driveSpeed = 0; }
 }
 void set() {
-  if (currentCommand=='W'){
+  if (currentCommand == 'W') {
     weaponSpeed = tempweaponSpeed;
   }
   if (tempdriveAngle > 359 || tempdriveAngle < 0) {
@@ -447,18 +465,18 @@ void setMotor(int chan, int speed) {
 }
 
 //ramp up the meltybrain in melty mode to stop the fucking pulleys from melting.
-void setMeltyMotor(int chan, int speed){
-  if (abs(speed)>rpm/rpmPerPower){
-    speed = abs(speed)/speed*rpm/rpmPerPower;
-    if (abs(speed)<powerFloor){
-      speed = abs(speed)/speed*powerFloor;
+void setMeltyMotor(int chan, int speed) {
+  if (abs(speed) > rpm / rpmPerPower) {
+    speed = abs(speed) / speed * rpm / rpmPerPower;
+    if (abs(speed) < powerFloor) {
+      speed = abs(speed) / speed * powerFloor;
     }
   }
-  
+
   setMotor(chan, speed);
 }
-float readVoltage(){
-  battVoltage = fuckupvoltmult*(r1+r2)*3.3*analogRead(voltagePin)/4096/r2;
+float readVoltage() {
+  battVoltage = fuckupvoltmult * (r1 + r2) * 3.3 * analogRead(voltagePin) / 4096 / r2;
   return battVoltage;
 }
 void send() {
@@ -490,32 +508,32 @@ void send() {
   //send accel values
   btwrite("*BA1:");
   int tempval = accel1.convertToG(400, a1val);
-  if (tempval<0){
+  if (tempval < 0) {
     btwrite("-");
-    tempval=tempval*-1;
-  }else{
+    tempval = tempval * -1;
+  } else {
     btwrite("+");
   }
-  if (tempval<100){
+  if (tempval < 100) {
     btwrite("0");
   }
-    if (tempval<10){
+  if (tempval < 10) {
     btwrite("0");
   }
   dtostrf(tempval, 1, 0, str);
   btwrite(str);
   btwrite(" A2:");
   tempval = accel2.convertToG(400, a1val);
-  if (tempval<0){
+  if (tempval < 0) {
     btwrite("-");
-    tempval=tempval*-1;
-  }else{
+    tempval = tempval * -1;
+  } else {
     btwrite("+");
   }
-  if (tempval<100){
+  if (tempval < 100) {
     btwrite("0");
   }
-    if (tempval<10){
+  if (tempval < 10) {
     btwrite("0");
   }
   dtostrf(tempval, 1, 0, str);
@@ -526,7 +544,6 @@ void send() {
   dtostrf(readVoltage(), 1, 1, str);
   btwrite(str);
   btwrite("V*");
-
 }
 void btwrite(String str) {
   uint8_t buf[str.length()];
