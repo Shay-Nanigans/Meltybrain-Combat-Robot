@@ -25,6 +25,7 @@ int accel1Orientation = 2;  //orientation of accelerometer1: x=0 y=1 z=2
 int accel2Orientation = 2;  //orientation of accelerometer2: x=0 y=1 z=2
 bool accelSame = false;     //whether one accel is flipped
 long guideLEDwidth = 900;   //width of the guide
+long driveLEDwidth = 100;   //width of the drive indicator
 long LEDoffset = 0;         //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 300;      //valid times to go in direction
 int ticksPerCheck = 5;
@@ -44,7 +45,7 @@ int powerFloor = 32;              //minimum rpmPerPower duty (max 255)
 float r1 = 47000;
 float r2 = 10250;
 int voltagePin = 33;
-float fuckupvoltmult = 1.31;  //fuck this number, it should be 1
+float fuckupvoltmult = 1;  //fuck this number, it should be 1
 
 //VARIABLES
 float rpm;
@@ -68,7 +69,7 @@ int tempweaponSpeed = 0;  //MELTY SPEED
 int weaponSpeed = 0;
 long leftMotor = 0;
 long rightMotor = 0;
-
+bool flippedAngle = 0;
 
 //accel outputs
 int16_t a1x;
@@ -309,14 +310,16 @@ void meltyLED() {
   //Guide LED
   if ((direction + LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
     digitalWrite(pinLED, HIGH);
-  } else {
+  }else  if (((direction + (driveAngle * 10) + (driveLEDwidth / 2)) % 3600 < driveLEDwidth)&&(driveSpeed>5)) {
+    digitalWrite(pinLED, HIGH);
+    }else {
     digitalWrite(pinLED, LOW);
   }
 }
 
 void melty() {
   Serial.println(driveSpeed);
-  if (driveSpeed > 3) {
+  if (driveSpeed > 5) {
     //LeftDrive
     Serial.println((direction + (driveAngle * 10) + (driveWidth / 2)) % 3600);
 
@@ -403,6 +406,16 @@ void checkCommands() {
       changeAccelDist(-0.01);
     } else if (nextChar == 'l') {
       changeAccelDist(-0.001);
+    } else if (nextChar == 'F') {
+      flippedAngle = 1;
+    } else if (nextChar == 'f') {
+      flippedAngle = 0;
+    } else if (nextChar == 'O') {
+      LEDoffset += 5;
+      LEDoffset = LEDoffset % 3600;
+    } else if (nextChar == 'o') {
+      LEDoffset -= 5;
+      LEDoffset = LEDoffset % 3600;
     } else if (nextChar == '!') {
       set();
     } else {
@@ -431,6 +444,11 @@ void set() {
     return;
   }
   driveSpeed = tempdriveSpeed;
+  if (melting) {
+    if (flippedAngle == 1) {
+      tempdriveAngle = 359 - tempdriveAngle;
+    }
+  }
   driveAngle = tempdriveAngle;
   if (!melting) {  //Normal driving
 
