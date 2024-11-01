@@ -26,8 +26,8 @@ int accel2Orientation = 2;  //orientation of accelerometer2: x=0 y=1 z=2
 bool accelSame = false;     //whether one accel is flipped
 long guideLEDwidth = 900;   //width of the guide
 long driveLEDwidth = 100;   //width of the drive indicator
-long LEDoffset = 0;         //direction of LED relative to "Forwards" in degrees*10
-long driveWidth = 300;      //valid times to go in direction
+long LEDoffset = -450;         //direction of LED relative to "Forwards" in degrees*10
+long driveWidth = 450;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
 int ticksPerSend = 500;
@@ -310,7 +310,7 @@ void meltyLED() {
   //Guide LED
   if ((direction + LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
     digitalWrite(pinLED, HIGH);
-  }else  if (((direction + (driveAngle * 10) + (driveLEDwidth / 2)) % 3600 < driveLEDwidth)&&(driveSpeed>5)) {
+  }else  if (((direction + LEDoffset + (driveAngle * 10) + (driveLEDwidth / 2)) % 3600 < driveLEDwidth)&&(driveSpeed>5)) {
     digitalWrite(pinLED, HIGH);
     }else {
     digitalWrite(pinLED, LOW);
@@ -411,10 +411,10 @@ void checkCommands() {
     } else if (nextChar == 'f') {
       flippedAngle = 0;
     } else if (nextChar == 'O') {
-      LEDoffset += 5;
+      LEDoffset += 50;
       LEDoffset = LEDoffset % 3600;
     } else if (nextChar == 'o') {
-      LEDoffset -= 5;
+      LEDoffset -= 50;
       LEDoffset = LEDoffset % 3600;
     } else if (nextChar == '!') {
       set();
@@ -523,7 +523,13 @@ void send() {
   btwrite(str);
   btwrite("*");
 
-  //send accel values
+if(millis()%4000>2000){
+btwrite("*BLEDO:");
+dtostrf(LEDoffset, 1, 0, str);
+btwrite(str);
+btwrite("*");
+}else{
+    //send accel values
   btwrite("*BA1:");
   int tempval = accel1.convertToG(400, a1val);
   if (tempval < 0) {
@@ -557,6 +563,7 @@ void send() {
   dtostrf(tempval, 1, 0, str);
   btwrite(str);
   btwrite("*");
+  }
 
   btwrite("*NBatt: ");
   dtostrf(readVoltage(), 1, 1, str);
