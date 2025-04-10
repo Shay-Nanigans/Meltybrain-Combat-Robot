@@ -26,13 +26,13 @@ int accel2Orientation = 2;  //orientation of accelerometer2: x=0 y=1 z=2
 bool accelSame = false;     //whether one accel is flipped
 long guideLEDwidth = 900;   //width of the guide
 long driveLEDwidth = 100;   //width of the drive indicator
-long LEDoffset = -450;         //direction of LED relative to "Forwards" in degrees*10
+long LEDoffset = -450;      //direction of LED relative to "Forwards" in degrees*10
 long driveWidth = 450;      //valid times to go in direction
 int ticksPerCheck = 5;
 int ticksPerAccelCalc = 10;
 int ticksPerSend = 500;
 int timeout = 3000;               //milliseconds since last heartbeat to be declared dead
-const int runningAvgLen = 50;     //how many datapoints to use for the running average
+const int runningAvgLen = 10;     //how many datapoints to use for the running average
 int driveTimeout = 1000;          //how long it drives in a direction with timedmove
 int accelReadZone = 450;          // how large of an area after drive width that the accelerometers are allowed to be read in
 int forceAccelReadTime = 500000;  //roughly the time it takes to read from the accelerometers in microseconds
@@ -40,7 +40,8 @@ int driveControlFreq = 4000;      //Oneshot125 is 4000hz
 int maxPower = 220;               //Maximum PWM duty (max 255)
 float rpmPerPower = 10;           //number of RPM per 1/255 power. rpmPerPower*255 should be equal or larger that max rpm.
 int powerFloor = 32;              //minimum rpmPerPower duty (max 255)
-
+int gMax = 390;                   //when Gs hits this point, motor power will be 0
+int gThrottle = 370;              //point where motors start to get throttled
 //voltage reader
 float r1 = 47000;
 float r2 = 10250;
@@ -66,6 +67,7 @@ int driveSpeed = 0;  //0 to 1
 int tempdriveSpeed = 0;
 int tempdriveAngle = 0;
 int tempweaponSpeed = 0;  //MELTY SPEED
+int tempGthrottle = 0;
 int weaponSpeed = 0;
 long leftMotor = 0;
 long rightMotor = 0;
@@ -310,9 +312,9 @@ void meltyLED() {
   //Guide LED
   if ((direction + LEDoffset + (guideLEDwidth / 2)) % 3600 < guideLEDwidth) {
     digitalWrite(pinLED, HIGH);
-  }else  if (((direction + LEDoffset + (driveAngle * 10) + (driveLEDwidth / 2)) % 3600 < driveLEDwidth)&&(driveSpeed>5)) {
+  } else if (((direction + LEDoffset + (driveAngle * 10) + (driveLEDwidth / 2)) % 3600 < driveLEDwidth) && (driveSpeed > 5)) {
     digitalWrite(pinLED, HIGH);
-    }else {
+  } else {
     digitalWrite(pinLED, LOW);
   }
 }
@@ -346,12 +348,12 @@ void melty() {
       setMotor(chanLeftDrive, -255);
       setMotor(chanRightDrive, 0);
     } else {
-      setMotor(chanLeftDrive, -weaponSpeed);
-      setMotor(chanRightDrive, weaponSpeed);
+      setMotor(chanLeftDrive, gThrottleAdjust(-weaponSpeed));
+      setMotor(chanRightDrive, gThrottleAdjust(weaponSpeed));
     }
   } else {
-    setMotor(chanLeftDrive, -weaponSpeed);
-    setMotor(chanRightDrive, weaponSpeed);
+    setMotor(chanLeftDrive, gThrottleAdjust(-weaponSpeed));
+    setMotor(chanRightDrive, gThrottleAdjust(weaponSpeed));
   }
 }
 
@@ -390,6 +392,9 @@ void checkCommands() {
     } else if (nextChar == 'm') {
       if (currentCommand == 'm') { freeze(); }
       currentCommand = 'm';
+    } else if (nextChar == 'p') {
+      currentCommand = 'p';
+      tempGthrottle = 0;
     } else if (nextChar == 'H') {
       changeAccelDist(1);
     } else if (nextChar == 'J') {
@@ -429,6 +434,10 @@ void checkCommands() {
           break;
         case 'W':
           tempweaponSpeed = tempweaponSpeed * 10 + nextChar - 48;
+          break;
+        case 'p':
+          tempGthrottle = tempGthrottle * 10 + nextChar - 48;
+          break;
       }
     }
   }
@@ -439,6 +448,9 @@ void driveCheck() {
 void set() {
   if (currentCommand == 'W') {
     weaponSpeed = tempweaponSpeed;
+  } else if (currentCommand == 'p') {
+    gThrottle = tempGthrottle;
+    return;
   }
   if (tempdriveAngle > 359 || tempdriveAngle < 0) {
     return;
@@ -481,7 +493,16 @@ void setMotor(int chan, int speed) {
   //
   ledcWrite(chan, 512 + speed);
 }
-
+int gThrottleAdjust(int setpoint) {
+  float g = max(abs(a1Running), abs(a2Running));
+  if (g > gMax) {
+    return 0;
+  } else if (g > gThrottle) {
+    return setpoint*(g - gThrottle) / (gMax - gThrottle);
+  } else {
+    return setpoint;
+  }
+}
 //ramp up the meltybrain in melty mode to stop the fucking pulleys from melting.
 void setMeltyMotor(int chan, int speed) {
   if (abs(speed) > rpm / rpmPerPower) {
@@ -523,46 +544,46 @@ void send() {
   btwrite(str);
   btwrite("*");
 
-if(millis()%4000>2000){
-btwrite("*BLEDO:");
-dtostrf(LEDoffset, 1, 0, str);
-btwrite(str);
-btwrite("*");
-}else{
+  if (millis() % 4000 > 2000) {
+    btwrite("*BLEDO:");
+    dtostrf(LEDoffset, 1, 0, str);
+    btwrite(str);
+    btwrite("*");
+  } else {
     //send accel values
-  btwrite("*BA1:");
-  int tempval = accel1.convertToG(400, a1val);
-  if (tempval < 0) {
-    btwrite("-");
-    tempval = tempval * -1;
-  } else {
-    btwrite("+");
-  }
-  if (tempval < 100) {
-    btwrite("0");
-  }
-  if (tempval < 10) {
-    btwrite("0");
-  }
-  dtostrf(tempval, 1, 0, str);
-  btwrite(str);
-  btwrite(" A2:");
-  tempval = accel2.convertToG(400, a1val);
-  if (tempval < 0) {
-    btwrite("-");
-    tempval = tempval * -1;
-  } else {
-    btwrite("+");
-  }
-  if (tempval < 100) {
-    btwrite("0");
-  }
-  if (tempval < 10) {
-    btwrite("0");
-  }
-  dtostrf(tempval, 1, 0, str);
-  btwrite(str);
-  btwrite("*");
+    btwrite("*BA1:");
+    int tempval = accel1.convertToG(400, a1val);
+    if (tempval < 0) {
+      btwrite("-");
+      tempval = tempval * -1;
+    } else {
+      btwrite("+");
+    }
+    if (tempval < 100) {
+      btwrite("0");
+    }
+    if (tempval < 10) {
+      btwrite("0");
+    }
+    dtostrf(tempval, 1, 0, str);
+    btwrite(str);
+    btwrite(" A2:");
+    tempval = accel2.convertToG(400, a1val);
+    if (tempval < 0) {
+      btwrite("-");
+      tempval = tempval * -1;
+    } else {
+      btwrite("+");
+    }
+    if (tempval < 100) {
+      btwrite("0");
+    }
+    if (tempval < 10) {
+      btwrite("0");
+    }
+    dtostrf(tempval, 1, 0, str);
+    btwrite(str);
+    btwrite("*");
   }
 
   btwrite("*NBatt: ");
